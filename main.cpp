@@ -22,15 +22,16 @@ void *producer(void *);
 void *consumer(void *);
 
 // Shared producer and consumer logic
-bool shared_logic(const string buffer_contents, const string buffer_from);
+void shared_logic(const string buffer_contents, const string buffer_from);
 
 // Utility Methods
 int randomAlphabeticInteger();
+int charAlphabetPosition(char k);
 void destroySemaphores(sem_t sems[], int num_of_sems);
-void produceProduct(string &product);
+void produceProduct(string &product, int k, bool use_passed_k);
 bool continueRunningCheck(string current_char_sequence, string thread_from);
 bool charIsVowel(char c);
-bool charIsPrime(int number);
+bool charIsPrime(int char_number);
 
 // ==============================
 // Globals
@@ -57,7 +58,7 @@ int selected_user_option = -1; // Can be either Option: 1 or 2
 int run_mode = -1;
 int current_iteration = 0;
 int run_iterations = 0;
-string stop_sequence = "xyz";
+string stop_sequence;
 const string ALPHABET = "abcdefghijklmnopqrstuvwxyz";
 
 
@@ -101,7 +102,7 @@ int main() {
     // Get program running options from user input
     printf("Enter the desired program runtime option:\n"
            "1: Run indefinitely (until cancelled with interrupt signal).\n"
-           "2: Run until character sequence \"xyz\" is found.\n"
+           "2: Run until character sequence \"k-1, k, k+1\" is found.\n"
            "3: Run N times (iterations)\n"
            "Your runtime selection: ");
     invalid_input = true;
@@ -145,6 +146,36 @@ int main() {
                        "Your N iterations selection: ");
             } else {
                 printf("%d iterations selected.\n\n", run_iterations);
+                invalid_input = false;
+            }
+        }
+    }
+    // If run_mode is 2, get the character sequence to quit on
+    if (run_mode == 2) {
+        printf("Enter the single character k for its k - 1 + k + k + 1 character sequence to be halted on:\n"
+               "Your k selection: ");
+        invalid_input = true;
+        while (invalid_input) {
+            try {
+                // Read in user input
+                getline(cin, user_input);
+                stop_sequence = user_input;
+                user_input = "";
+                printf("\n");
+            } catch (...) {
+                printf("Critical invalid user input. Exiting program...\n");
+                exit(1); // Exit thread with unsuccessful 1 code on reading input error
+            }
+            if (stop_sequence.length() > 1 || stop_sequence.empty() || !isalpha(stop_sequence[0])) {
+                printf("Invalid option. Please enter a character k that is between 'a' and 'z'.\n"
+                       "Your k selection: ");
+            } else {
+                // Convert user entered character to its integer position
+                char k_char = stop_sequence[0];
+                tolower(k_char);
+                int k_int = charAlphabetPosition(k_char);
+                produceProduct(stop_sequence, k_int - 1, true);
+                printf("%s stop sequence selected.\n\n", stop_sequence.c_str());
                 invalid_input = false;
             }
         }
@@ -239,7 +270,7 @@ void* producer(void*) {
     // Check if thread should continue iterations
     while (continueRunningCheck(product, "Producer")) {
         // Generate a string that is 3 random characters
-        produceProduct(product);
+        produceProduct(product, 0, false);
 
         // Wait on empty
         sem_wait(&empty);
@@ -294,14 +325,15 @@ void* consumer(void *) {
 // ==============================
 // Shared Logic
 // ==============================
-bool shared_logic(const string buffer_contents, const string buffer_from) {
+void shared_logic(const string buffer_contents, const string buffer_from) {
+    // Print the buffer contents for the active thread (consumer or producer)
     printf("%s: Buffer contents: %s\n", buffer_from.c_str(), buffer_contents.c_str());
     char k_m1 = buffer_contents[0];
     char k = buffer_contents[1];
     char k_p1 = buffer_contents[2];
 
-    size_t k_int = ALPHABET.find(k) + 1;
-    printf("Integer k = %d\n", (int)k_int);
+    // Get the integer k value from character position in alphabet
+    int k_int = charAlphabetPosition(k);
 
     // Count the number of vowels
     int num_of_product_vowels = 0;
@@ -314,42 +346,79 @@ bool shared_logic(const string buffer_contents, const string buffer_from) {
     if (charIsVowel(k_p1)) {
         num_of_product_vowels++;
     }
+    // Print results
     printf("%s: Number of vowels in product: %d\n", buffer_from.c_str(), num_of_product_vowels);
 
     // Determine which characters are prime
     printf("%s: Is each of the following prime?\n", buffer_from.c_str());
     if (k_int == 0) {
         if (charIsPrime(26)) {
-            printf("\tk-1: Yes, is prime\n");
+            printf("\tk-1 = %d: Yes, is prime\n", 26);
         } else {
-            printf("\tk-1: No, not prime\n");
+            printf("\tk-1 = %d: No, not prime\n", 26);
         }
     } else {
-        if (charIsPrime((int)k_int)) {
-            printf("\tk-1: Yes, is prime\n");
+        if (charIsPrime(k_int)) {
+            printf("\tk-1 = %d: Yes, is prime\n", k_int);
         } else {
-            printf("\tk-1: No, not prime\n");
+            printf("\tk-1 = %d: No, not prime\n", k_int);
         }
     }
-    if (charIsPrime((int)k_int + 1)) {
-        printf("\tk: Yes, is prime\n");
+    if (charIsPrime(k_int + 1)) {
+        printf("\tk = %d: Yes, is prime\n", k_int + 1);
     } else {
-        printf("\tk: No, not prime\n");
+        printf("\tk = %d: No, not prime\n", k_int + 1);
     }
-    if (charIsPrime((int)k_int + 2)) {
-        printf("\tk+1: Yes, is prime\n");
+    if (charIsPrime(k_int + 2)) {
+        printf("\tk+1 = %d: Yes, is prime\n", k_int + 2);
     } else {
-        printf("\tk+1: No, not prime\n");
+        printf("\tk+1 = %d: No, not prime\n", k_int + 2);
     }
 
-    // Get the alphabetic contents to the left 3 and right 4 of the product
-//    string left_neighbors = ALPHABET.substr(k_int - 4, k_int);
-//    string right_neighbors = ALPHABET.substr(k_int, k_int + 4);
+    // Get the 3 left alphabetic characters from the product
+    int current_index;
+    string left_neighbors = "";
+    for (int i = k_int - 4; i < k_int - 1; i++) {
+        current_index = i % 26;
+        if (current_index <= 0) {
+            current_index += 26;
+        }
+        left_neighbors += ALPHABET[current_index - 1];
+    }
 
-    // Determine if k-1, k, and k+1 are vowels, where k is the middle character
-    if (buffer_contents[0])
+    // Get the 4 right alphabetic characters from the product
+    string right_neighbors = "";
+    for (int i = k_int + 5; i > k_int + 1; i--) {
+        current_index = i % 26;
+        if (current_index <= 0) {
+            current_index += 26;
+        }
+        right_neighbors += ALPHABET[current_index - 1];
+    }
+    // Reverse the backwards right neighbors
+    reverse(right_neighbors.begin(), right_neighbors.end());
 
-    return true; // If section 1 is valid, returns true with values for current_index and section_one_int set correctly
+    // Print results
+    printf("%s: 3 Left neighbors from product: %s\n", buffer_from.c_str(), left_neighbors.c_str());
+    printf("%s: 4 Right neighbors from product: %s\n", buffer_from.c_str(), right_neighbors.c_str());
+
+    // Get the number of vowels in left/right neighbors
+    int left_vowels = 0;
+    int right_vowels = 0;
+    for (int i = 0; i < left_neighbors.length(); i++) {
+        if (charIsVowel(left_neighbors[i])) {
+            left_vowels++;
+        }
+    }
+    for (int i = 0; i < right_neighbors.length(); i++) {
+        if (charIsVowel(right_neighbors[i])) {
+            right_vowels++;
+        }
+    }
+    // Print results
+    printf("%s: Number of vowels in left 3 neighbors: %d\n", buffer_from.c_str(), left_vowels);
+    printf("%s: Number of vowels in right 4 neighbors: %d\n", buffer_from.c_str(), right_vowels);
+    printf("\n"); // Newline after buffer logic is finished
 }
 
 
@@ -365,6 +434,11 @@ int randomAlphabeticInteger() {
     return uni(rng);
 }
 
+/* Returns the integer (1 - 26) of the equivalent position of 'k' for a characters location in the alphabet */
+int charAlphabetPosition(char k) {
+    return (int)ALPHABET.find(k) + 1;
+}
+
 void destroySemaphores(sem_t sems[], int num_of_sems) {
     for (int i = 0; i < num_of_sems; i++) {
         sem_destroy(&sems[i]);
@@ -372,10 +446,12 @@ void destroySemaphores(sem_t sems[], int num_of_sems) {
 }
 
 /* Generate a string that is k - 1, k, k + 1 where k is an alphabetic position */
-void produceProduct(string &product) {
+void produceProduct(string &product, int k, bool use_passed_k) {
     product = "";
-    // Get random integer k
-    int k = randomAlphabeticInteger();
+    // Get random integer k if k isn't passed in
+    if (!use_passed_k) {
+        k = randomAlphabeticInteger();
+    }
 
     // Set k - 1
     if (k - 1 == -1) {
@@ -404,6 +480,7 @@ bool continueRunningCheck(const string current_char_sequence, string thread_from
     }
 
     if (run_mode == 2 && current_char_sequence == stop_sequence) {
+        printf("Exiting, stop sequence found: %s\n", current_char_sequence.c_str());
         return false;
     }
 
@@ -435,13 +512,20 @@ bool charIsVowel(char c) {
 
 /* Returns true if the passed in character as an integer is a prime number
  * ASSUMES 'y' is not a vowel */
-bool charIsPrime(int number) {
-    if (number < 2) return false;
-    if (number == 2) return true;
-    if (number % 2 == 0) return false;
-    for (int i=3; (i*i) <= number; i += 2) {
-        if(number % i == 0 ) return false;
+bool charIsPrime(int char_number) {
+    if (char_number < 2) {
+        return false;
+    }
+    if (char_number == 2) {
+        return true;
+    }
+    if (char_number % 2 == 0) {
+        return false;
+    }
+    for (int i = 3; (i * i) <= char_number; i += 2) {
+        if (char_number % i == 0 ) {
+            return false;
+        }
     }
     return true;
-
 }
