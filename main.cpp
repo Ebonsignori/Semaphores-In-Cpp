@@ -22,7 +22,7 @@ void *producer(void *);
 void *consumer(void *);
 
 // Shared producer and consumer logic
-void shared_logic(const string buffer_contents, const string buffer_from);
+void shared_logic(const string buffer_contents, const string buffer_from, int buffer_location);
 
 // Utility Methods
 int randomAlphabeticInteger();
@@ -62,7 +62,7 @@ string stop_sequence;
 const string ALPHABET = "abcdefghijklmnopqrstuvwxyz";
 
 
-const bool IS_LOGGING = true; // Set to true to turn on console logging for debugging purposes
+const bool IS_LOGGING = false; // Set to true to turn on console logging for debugging purposes
 
 // ==============================
 // Regex Globals
@@ -78,6 +78,7 @@ int main() {
     printf("Enter the desired program print option:\n"
            "1: Print results from producer before product is loaded into buffer.\n"
            "2: Print results from consumer after product is consumed from buffer.\n"
+           "3: Print results from producer before product is loaded and consumer after consuming product\n"
            "Your print option selection: ");
     bool invalid_input = true;
     while (invalid_input) {
@@ -91,8 +92,8 @@ int main() {
             printf("Critical invalid user input. Exiting program...\n");
             exit(1); // Exit thread with unsuccessful 1 code on reading input error
         }
-        if (selected_user_option != 1 && selected_user_option != 2) {
-            printf("Invalid option. Please enter either 1 or 2.\n"
+        if (selected_user_option != 1 && selected_user_option != 2 && selected_user_option != 3) {
+            printf("Invalid option. Please enter either 1, 2, or 3.\n"
                    "Your print option selection: ");
         } else {
             printf("Print option %d selected.\n\n", selected_user_option);
@@ -181,6 +182,7 @@ int main() {
         }
     }
 
+    printf("Beginning execution...\n\n");
     if (IS_LOGGING) {
         printf("User Input selections: \n"
                "Print Option (1 or 2): %d\n"
@@ -277,8 +279,8 @@ void* producer(void*) {
         sem_wait(&mutex);
 
         // Call shared logic if producer option is selected, load buffer with product, and increment IN
-        if (selected_user_option == 1) {
-            shared_logic(product, "Producer");
+        if (selected_user_option == 1 || selected_user_option == 3) {
+            shared_logic(product, "Producer", IN);
         }
         BUFFER[IN] = product;
         IN = (IN + 1) % BUFFER_SIZE;
@@ -309,10 +311,10 @@ void* consumer(void *) {
 
         // Consume product from buffer, call shared logic if consumer option is selected, and increment OUT
         consumed = BUFFER[OUT];
-        if (selected_user_option == 2) {
-            shared_logic(consumed, "Consumer");
+        if (selected_user_option == 2 || selected_user_option == 3) {
+            shared_logic(consumed, "Consumer", OUT);
         }
-        OUT = (OUT + IN) % BUFFER_SIZE;
+        OUT = (OUT + 1) % BUFFER_SIZE;
 
         // Signal that critical section is complete
         sem_post(&mutex);
@@ -325,9 +327,9 @@ void* consumer(void *) {
 // ==============================
 // Shared Logic
 // ==============================
-void shared_logic(const string buffer_contents, const string buffer_from) {
+void shared_logic(const string buffer_contents, const string buffer_from, int buffer_location) {
     // Print the buffer contents for the active thread (consumer or producer)
-    printf("%s: Buffer contents: %s\n", buffer_from.c_str(), buffer_contents.c_str());
+    printf("%s: Buffer contents from buffer #%d: %s\n", buffer_from.c_str(), buffer_location + 1, buffer_contents.c_str());
     char k_m1 = buffer_contents[0];
     char k = buffer_contents[1];
     char k_p1 = buffer_contents[2];
@@ -489,6 +491,8 @@ bool continueRunningCheck(const string current_char_sequence, string thread_from
         if (selected_user_option == 1 && thread_from == "Producer") {
             current_iteration++;
         } else if (selected_user_option == 2 && thread_from == "Consumer") {
+            current_iteration++;
+        } else if (selected_user_option == 3){
             current_iteration++;
         }
 
