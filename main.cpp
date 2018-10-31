@@ -22,12 +22,15 @@ void *producer(void *);
 void *consumer(void *);
 
 // Shared producer and consumer logic
-bool shared_logic(int buffer_location, string buffer_from);
+bool shared_logic(const string buffer_contents, const string buffer_from);
 
 // Utility Methods
-char randomAlphabeticCharacter();
+int randomAlphabeticInteger();
 void destroySemaphores(sem_t sems[], int num_of_sems);
-bool continueRunningCheck(string current_char_sequence);
+void produceProduct(string &product);
+bool continueRunningCheck(string current_char_sequence, string thread_from);
+bool charIsVowel(char c);
+bool charIsPrime(int number);
 
 // ==============================
 // Globals
@@ -55,6 +58,7 @@ int run_mode = -1;
 int current_iteration = 0;
 int run_iterations = 0;
 string stop_sequence = "xyz";
+const string ALPHABET = "abcdefghijklmnopqrstuvwxyz";
 
 
 const bool IS_LOGGING = true; // Set to true to turn on console logging for debugging purposes
@@ -223,26 +227,6 @@ int main() {
 // ==============================
 // Thread Methods
 // ==============================
-/* Consumes buffer contents if the buffer is filled
- *
- * Thread returns a uint code that is handled by the main method, with the following meanings:
- *   0 = successful exit (user keyboard interrupt)
- *   1 = uncaught error
- */
-void* consumer(void *) {
-    // Check if thread should continue iterations
-    while (continueRunningCheck(BUFFER[OUT])) {
-        // If this thread should wait, wait, otherwise execute critical section
-        while (IN == OUT) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-        shared_logic(OUT, "Consumer");
-        OUT += 1;
-    }
-
-    pthread_exit((void *) nullptr); // Exit thread with successful code
-}
-
 /* Producers  buffer contents if the buffer is filled
  *
  * Thread returns a uint code that is handled by the main method, with the following meanings:
@@ -253,27 +237,56 @@ void* producer(void*) {
     string product = "";
 
     // Check if thread should continue iterations
-    while (continueRunningCheck(product)) {
-        // If this thread should wait, wait, otherwise execute critical section
-        while ((IN + 1) % BUFFER_SIZE == OUT ) {
-            std::this_thread::sleep_for (std::chrono::seconds(1));
-        }
-
-        product = "";
+    while (continueRunningCheck(product, "Producer")) {
         // Generate a string that is 3 random characters
-        for (int i = 0; i < PRODUCT_LENGTH; i++) {
-            product += randomAlphabeticCharacter();
+        produceProduct(product);
+
+        // Wait on empty
+        sem_wait(&empty);
+        sem_wait(&mutex);
+
+        // Call shared logic if producer option is selected, load buffer with product, and increment IN
+        if (selected_user_option == 1) {
+            shared_logic(product, "Producer");
         }
-
-        // Load buffer with product
         BUFFER[IN] = product;
-
-        shared_logic(IN, "Producer");
-
-        // Increment IN pointer
         IN = (IN + 1) % BUFFER_SIZE;
+
+        // Signal that critical section is complete
+        sem_post(&mutex);
+        sem_post(&full);
     }
 
+
+    pthread_exit((void *) nullptr); // Exit thread with successful code
+}
+
+/* Consumes buffer contents if the buffer is filled
+ *
+ * Thread returns a uint code that is handled by the main method, with the following meanings:
+ *   0 = successful exit (user keyboard interrupt)
+ *   1 = uncaught error
+ */
+void* consumer(void *) {
+    string consumed = "";
+
+    // Check if thread should continue iterations
+    while (continueRunningCheck(BUFFER[OUT], "Consumer")) {
+        // Wait on empty
+        sem_wait(&full);
+        sem_wait(&mutex);
+
+        // Consume product from buffer, call shared logic if consumer option is selected, and increment OUT
+        consumed = BUFFER[OUT];
+        if (selected_user_option == 2) {
+            shared_logic(consumed, "Consumer");
+        }
+        OUT = (OUT + IN) % BUFFER_SIZE;
+
+        // Signal that critical section is complete
+        sem_post(&mutex);
+        sem_post(&empty);
+    }
 
     pthread_exit((void *) nullptr); // Exit thread with successful code
 }
@@ -281,9 +294,60 @@ void* producer(void*) {
 // ==============================
 // Shared Logic
 // ==============================
-bool shared_logic(int buffer_location, string buffer_from) {
-    printf("%s: Buffer contents: %s\n", buffer_from.c_str(), BUFFER[buffer_location].c_str());
+bool shared_logic(const string buffer_contents, const string buffer_from) {
+    printf("%s: Buffer contents: %s\n", buffer_from.c_str(), buffer_contents.c_str());
+    char k_m1 = buffer_contents[0];
+    char k = buffer_contents[1];
+    char k_p1 = buffer_contents[2];
 
+    size_t k_int = ALPHABET.find(k) + 1;
+    printf("Integer k = %d\n", (int)k_int);
+
+    // Count the number of vowels
+    int num_of_product_vowels = 0;
+    if (charIsVowel(k_m1)) {
+        num_of_product_vowels++;
+    }
+    if (charIsVowel(k)) {
+        num_of_product_vowels++;
+    }
+    if (charIsVowel(k_p1)) {
+        num_of_product_vowels++;
+    }
+    printf("%s: Number of vowels in product: %d\n", buffer_from.c_str(), num_of_product_vowels);
+
+    // Determine which characters are prime
+    printf("%s: Is each of the following prime?\n", buffer_from.c_str());
+    if (k_int == 0) {
+        if (charIsPrime(26)) {
+            printf("\tk-1: Yes, is prime\n");
+        } else {
+            printf("\tk-1: No, not prime\n");
+        }
+    } else {
+        if (charIsPrime((int)k_int)) {
+            printf("\tk-1: Yes, is prime\n");
+        } else {
+            printf("\tk-1: No, not prime\n");
+        }
+    }
+    if (charIsPrime((int)k_int + 1)) {
+        printf("\tk: Yes, is prime\n");
+    } else {
+        printf("\tk: No, not prime\n");
+    }
+    if (charIsPrime((int)k_int + 2)) {
+        printf("\tk+1: Yes, is prime\n");
+    } else {
+        printf("\tk+1: No, not prime\n");
+    }
+
+    // Get the alphabetic contents to the left 3 and right 4 of the product
+//    string left_neighbors = ALPHABET.substr(k_int - 4, k_int);
+//    string right_neighbors = ALPHABET.substr(k_int, k_int + 4);
+
+    // Determine if k-1, k, and k+1 are vowels, where k is the middle character
+    if (buffer_contents[0])
 
     return true; // If section 1 is valid, returns true with values for current_index and section_one_int set correctly
 }
@@ -292,15 +356,13 @@ bool shared_logic(int buffer_location, string buffer_from) {
 // ==============================
 // Utility Methods
 // ==============================
-/* Returns a random alphabetic character */
+/* Returns a random number 0 - 25 character */
 std::random_device rd;
 std::mt19937 rng(rd());
-char randomAlphabeticCharacter() {
+int randomAlphabeticInteger() {
     // Generate a random integer 0 through 25
     std::uniform_int_distribution<int> uni(0, 25);
-    auto random_integer = uni(rng);
-    // Return alphabetic character corresponding to integer
-    return "abcdefghijklmnopqrstuvwxyz"[random_integer];
+    return uni(rng);
 }
 
 void destroySemaphores(sem_t sems[], int num_of_sems) {
@@ -309,13 +371,33 @@ void destroySemaphores(sem_t sems[], int num_of_sems) {
     }
 }
 
+/* Generate a string that is k - 1, k, k + 1 where k is an alphabetic position */
+void produceProduct(string &product) {
+    product = "";
+    // Get random integer k
+    int k = randomAlphabeticInteger();
+
+    // Set k - 1
+    if (k - 1 == -1) {
+        product += ALPHABET[25];
+    } else {
+        product += ALPHABET[(k - 1) % 26];
+    }
+
+    // Set k
+    product += ALPHABET[k % 26];
+
+    // Set k + 1
+    product += ALPHABET[(k + 1) % 26];
+}
+
 /* Checks if the calling producer or consumer should continue iterating and returns true if they should, false otherwise
  * Runtime conditions are as follows:
  *  1 = Run indefinitely
  *  2 = Run until character sequence found
  *  3 = Run N times
  * */
-bool continueRunningCheck(string current_char_sequence) {
+bool continueRunningCheck(const string current_char_sequence, string thread_from) {
     // Skip other checks and return true if option 0
     if (run_mode == 0) {
         return true;
@@ -326,11 +408,40 @@ bool continueRunningCheck(string current_char_sequence) {
     }
 
     if (run_mode == 3) {
-        current_iteration++;
-        if (current_iteration >= run_iterations) {
+        // Only increment iterations from same thread
+        if (selected_user_option == 1 && thread_from == "Producer") {
+            current_iteration++;
+        } else if (selected_user_option == 2 && thread_from == "Consumer") {
+            current_iteration++;
+        }
+
+
+        if (current_iteration > run_iterations) {
             return false;
         }
     }
 
     return true;
+}
+
+/* Returns true if the passed in character is a vowel
+ * ASSUMES 'y' is not a vowel */
+bool charIsVowel(char c) {
+    if (c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u') {
+        return true;
+    }
+    return false;
+}
+
+/* Returns true if the passed in character as an integer is a prime number
+ * ASSUMES 'y' is not a vowel */
+bool charIsPrime(int number) {
+    if (number < 2) return false;
+    if (number == 2) return true;
+    if (number % 2 == 0) return false;
+    for (int i=3; (i*i) <= number; i += 2) {
+        if(number % i == 0 ) return false;
+    }
+    return true;
+
 }
