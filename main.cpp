@@ -1,13 +1,12 @@
 #include <pthread.h>
+#include <semaphore.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <semaphore.h>
 
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <regex>
 #include <algorithm>
 #include <random>
 #include <thread>
@@ -22,14 +21,14 @@ void *producer(void *);
 void *consumer(void *);
 
 // Shared producer and consumer logic
-void shared_logic(const string buffer_contents, const string buffer_from, int buffer_location);
+void shared_logic(const string &buffer_contents, const string &buffer_from, int buffer_location);
 
 // Utility Methods
 int randomAlphabeticInteger();
 int charAlphabetPosition(char k);
 void destroySemaphores(sem_t sems[], int num_of_sems);
 void produceProduct(string &product, int k, bool use_passed_k);
-bool continueRunningCheck(string current_char_sequence, string thread_from);
+bool continueRunningCheck(const string &current_char_sequence, const string &thread_from);
 bool charIsVowel(char c);
 bool charIsPrime(int char_number);
 
@@ -42,7 +41,6 @@ sem_t sems[3] = {empty, full, mutex};
 // Buffer
 const int BUFFER_SIZE = 2;
 string BUFFER[BUFFER_SIZE];
-const int PRODUCT_LENGTH = 3;
 // Buffer producer and consumer pointers
 int IN = 0;
 int OUT = 0;
@@ -63,11 +61,6 @@ const string ALPHABET = "abcdefghijklmnopqrstuvwxyz";
 
 
 const bool IS_LOGGING = false; // Set to true to turn on console logging for debugging purposes
-
-// ==============================
-// Regex Globals
-// ==============================
-
 
 // ==============================
 // Main Method
@@ -202,9 +195,9 @@ int main() {
     int producer_thread_joined, consumer_thread_joined;
 
     // Initialize Semaphores
-    int empty_sem_result = sem_init(&empty, 0, BUFFER_SIZE);
-    int full_sem_result = sem_init(&full, 0, 0);
-    int mutex_sem_result = sem_init(&mutex, 0, 1);
+    sem_init(&empty, 0, BUFFER_SIZE);
+    sem_init(&full, 0, 0);
+    sem_init(&mutex, 0, 1);
 
     // Create producer and consumer threads
     producer_thread_created = pthread_create(&producer_thread, nullptr, producer, nullptr);
@@ -267,10 +260,11 @@ int main() {
  *   1 = uncaught error
  */
 void* producer(void*) {
-    string product = "";
+    string product;
+    string producer = "Producer";
 
     // Check if thread should continue iterations
-    while (continueRunningCheck(product, "Producer")) {
+    while (continueRunningCheck(product, producer)) {
         // Generate a string that is 3 random characters
         produceProduct(product, 0, false);
 
@@ -280,7 +274,7 @@ void* producer(void*) {
 
         // Call shared logic if producer option is selected, load buffer with product, and increment IN
         if (selected_user_option == 1 || selected_user_option == 3) {
-            shared_logic(product, "Producer", IN);
+            shared_logic(product, producer, IN);
         }
         BUFFER[IN] = product;
         IN = (IN + 1) % BUFFER_SIZE;
@@ -301,10 +295,11 @@ void* producer(void*) {
  *   1 = uncaught error
  */
 void* consumer(void *) {
-    string consumed = "";
+    string consumed;
+    string consumer = "Consumer";
 
     // Check if thread should continue iterations
-    while (continueRunningCheck(BUFFER[OUT], "Consumer")) {
+    while (continueRunningCheck(BUFFER[OUT], consumer)) {
         // Wait on empty
         sem_wait(&full);
         sem_wait(&mutex);
@@ -312,7 +307,7 @@ void* consumer(void *) {
         // Consume product from buffer, call shared logic if consumer option is selected, and increment OUT
         consumed = BUFFER[OUT];
         if (selected_user_option == 2 || selected_user_option == 3) {
-            shared_logic(consumed, "Consumer", OUT);
+            shared_logic(consumed, consumer, OUT);
         }
         OUT = (OUT + 1) % BUFFER_SIZE;
 
@@ -327,7 +322,7 @@ void* consumer(void *) {
 // ==============================
 // Shared Logic
 // ==============================
-void shared_logic(const string buffer_contents, const string buffer_from, int buffer_location) {
+void shared_logic(const string &buffer_contents, const string &buffer_from, int buffer_location) {
     // Print the buffer contents for the active thread (consumer or producer)
     printf("%s: Buffer contents from buffer #%d: %s\n", buffer_from.c_str(), buffer_location + 1, buffer_contents.c_str());
     char k_m1 = buffer_contents[0];
@@ -379,7 +374,7 @@ void shared_logic(const string buffer_contents, const string buffer_from, int bu
 
     // Get the 3 left alphabetic characters from the product
     int current_index;
-    string left_neighbors = "";
+    string left_neighbors;
     for (int i = k_int - 4; i < k_int - 1; i++) {
         current_index = i % 26;
         if (current_index <= 0) {
@@ -389,7 +384,7 @@ void shared_logic(const string buffer_contents, const string buffer_from, int bu
     }
 
     // Get the 4 right alphabetic characters from the product
-    string right_neighbors = "";
+    string right_neighbors;
     for (int i = k_int + 5; i > k_int + 1; i--) {
         current_index = i % 26;
         if (current_index <= 0) {
@@ -407,13 +402,13 @@ void shared_logic(const string buffer_contents, const string buffer_from, int bu
     // Get the number of vowels in left/right neighbors
     int left_vowels = 0;
     int right_vowels = 0;
-    for (int i = 0; i < left_neighbors.length(); i++) {
-        if (charIsVowel(left_neighbors[i])) {
+    for (char& c : left_neighbors) {
+        if (charIsVowel(c)) {
             left_vowels++;
         }
     }
-    for (int i = 0; i < right_neighbors.length(); i++) {
-        if (charIsVowel(right_neighbors[i])) {
+    for (char& c : right_neighbors) {
+        if (charIsVowel(c)) {
             right_vowels++;
         }
     }
@@ -428,11 +423,11 @@ void shared_logic(const string buffer_contents, const string buffer_from, int bu
 // Utility Methods
 // ==============================
 /* Returns a random number 0 - 25 character */
-std::random_device rd;
-std::mt19937 rng(rd());
+random_device rd;
+mt19937 rng(rd());
 int randomAlphabeticInteger() {
     // Generate a random integer 0 through 25
-    std::uniform_int_distribution<int> uni(0, 25);
+    uniform_int_distribution<int> uni(0, 25);
     return uni(rng);
 }
 
@@ -475,7 +470,7 @@ void produceProduct(string &product, int k, bool use_passed_k) {
  *  2 = Run until character sequence found
  *  3 = Run N times
  * */
-bool continueRunningCheck(const string current_char_sequence, string thread_from) {
+bool continueRunningCheck(const string &current_char_sequence, const string &thread_from) {
     // Skip other checks and return true if option 0
     if (run_mode == 0) {
         return true;
